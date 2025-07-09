@@ -1,0 +1,4 @@
+__pycache__/
+binary/__pycache__/
+collector/__pycache__/
+config-mantra-bcw.toml
