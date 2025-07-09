@@ -121,11 +121,11 @@ echo "✅ config.toml created."
 # ---------------------------
 # Create systemd service
 # ---------------------------
-echo "🔧 Creating systemd service: pickleprobe"
+echo "🔧 Creating systemd service: chainprobe"
 
-cat > /etc/systemd/system/pickleprobe.service <<EOF
+cat > /etc/systemd/system/chainprobe.service <<EOF
 [Unit]
-Description=PickleProbe Multi-Protocol Exporter
+Description=chainprobe Multi-Protocol Exporter
 After=network.target
 
 [Service]
@@ -142,16 +142,16 @@ EOF
 # ---------------------------
 # Enable + start service
 # ---------------------------
-echo "🟢 Starting PickleProbe service..."
+echo "🟢 Starting chainprobe service..."
 systemctl daemon-reexec
 systemctl daemon-reload
-systemctl enable pickleprobe
-systemctl restart pickleprobe
+systemctl enable chainprobe
+systemctl restart chainprobe
 
 # ---------------------------
 # Done!
 # ---------------------------
-echo -e "\n🚀 PickleProbe is installed and running!"
-echo "Check status:  sudo systemctl status pickleprobe"
-echo "Logs:          journalctl -u pickleprobe -f"
+echo -e "\n🚀 chainprobe is installed and running!"
+echo "Check status:  sudo systemctl status chainprobe"
+echo "Logs:          journalctl -u chainprobe -f"
 echo "Metrics:       curl http://localhost:$metrics_port/metrics"
