@@ -46,7 +46,7 @@ def get_binary_version(binary_path):
     if not binary_path:
         return None
 
-    version_regex = re.compile(r"\bv?(\d+\.\d+\.\d+(?:[-+.\w]*)?)\b")
+    version_regex = re.compile(r"\\bv?(\\d+\\.\\d+\\.\\d+(?:[-+.\\w]*)?)\\b")
 
     version_cmds = [
         [binary_path, "version"],
@@ -66,10 +66,27 @@ def get_binary_version(binary_path):
             continue
     return None
 
+def get_docker_container_versions(container_names):
+    versions = {}
+    for name in container_names:
+        try:
+            output = subprocess.check_output(["docker", "inspect", "--format='{{.Config.Image}}'", name], text=True).strip("'\n")
+            if ":" in output:
+                image, version = output.rsplit(":", 1)
+            else:
+                image = output
+                version = "latest"
+            versions[name] = version
+        except subprocess.CalledProcessError as e:
+            logger.error(f"[!] Failed to get version for Docker container {name}: {e}")
+    return versions
+
 async def report_binary_version_daily(config):
     binaries = config.get("binaries", {})
+    docker_containers = config.get("docker_containers", [])
 
     while True:
+        # Handle systemd services
         for alias, unit_path in binaries.items():
             binary_path = extract_binary_path_from_unit(unit_path)
 
@@ -84,5 +101,12 @@ async def report_binary_version_daily(config):
                 logger.info(f"[✓] {alias}: {version}")
             else:
                 logger.warning(f"[!] Could not determine version for: {alias}")
+
+        # Handle docker containers
+        if docker_containers:
+            versions = get_docker_container_versions(docker_containers)
+            for name, version in versions.items():
+                binary_version_metric.labels(binary=name, version=version).set(1)
+                logger.info(f"[✓] Docker {name}: {version}")
 
         await asyncio.sleep(3600)
