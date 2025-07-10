@@ -4,7 +4,7 @@ set -e
 
 echo "🌐 Multi-Chain Exporter Setup Script (Global Python)"
 
-# Ensure required packages are available
+# Install required Python packages globally
 echo "📦 Installing required Python packages globally..."
 sudo pip3 install --upgrade pip
 sudo pip3 install httpx prometheus_client toml psutil web3 schedule
@@ -17,7 +17,8 @@ read -p "Enter protocol (cosmos / evm / other): " protocol
 read -p "Is this a validator node? (yes/no): " is_validator
 read -p "Enter Prometheus metrics port (default 3000): " metrics_port
 metrics_port=${metrics_port:-3000}
-read -p "Enter comma-separated binary aliases (e.g. gaiad,geth,relayer): " binary_input
+read -p "Enter comma-separated systemd binary names (or leave blank): " binary_input
+read -p "Enter comma-separated Docker container names (or leave blank): " docker_input
 
 # ---------------------------
 # Generate config.toml
@@ -28,22 +29,44 @@ protocol = "$protocol"
 metrics_port = $metrics_port
 EOF
 
-# Add [binaries] section with auto-detected paths
-echo -e "\n[binaries]" >> config.toml
-IFS=',' read -ra BIN_ARRAY <<< "$binary_input"
-for alias in "${BIN_ARRAY[@]}"; do
-  alias_trimmed=$(echo "$alias" | xargs)
-  unit_path=$(systemctl show "${alias_trimmed}.service" -p FragmentPath --value 2>/dev/null)
+# ---------------------------
+# Add binaries (systemd services)
+# ---------------------------
+if [[ -n "$binary_input" ]]; then
+  echo -e "\n[binaries]" >> config.toml
+  IFS=',' read -ra BIN_ARRAY <<< "$binary_input"
+  for alias in "${BIN_ARRAY[@]}"; do
+    alias_trimmed=$(echo "$alias" | xargs)
+    unit_path=$(systemctl show "${alias_trimmed}.service" -p FragmentPath --value 2>/dev/null)
 
-  if [[ -n "$unit_path" && -f "$unit_path" ]]; then
-    echo "$alias_trimmed = \"$unit_path\"" >> config.toml
-    echo "[✓] Found unit for $alias_trimmed → $unit_path"
-  else
-    echo "[!] Could not find unit file for $alias_trimmed. Skipping..."
-  fi
-done
+    # Always quote TOML keys
+    safe_alias="\"$alias_trimmed\""
 
+    if [[ -n "$unit_path" && -f "$unit_path" ]]; then
+      echo "$safe_alias = \"$unit_path\"" >> config.toml
+      echo "[✓] Found unit for $alias_trimmed → $unit_path"
+    else
+      echo "[!] Could not find unit file for $alias_trimmed. Skipping..."
+    fi
+  done
+fi
+
+# ---------------------------
+# Add Docker containers
+# ---------------------------
+if [[ -n "$docker_input" ]]; then
+  echo -e "\n[docker_containers]" >> config.toml
+  IFS=',' read -ra DOCKER_ARRAY <<< "$docker_input"
+  for alias in "${DOCKER_ARRAY[@]}"; do
+    alias_trimmed=$(echo "$alias" | xargs)
+    safe_alias="\"$alias_trimmed\""
+    echo "$safe_alias = true" >> config.toml
+  done
+fi
+
+# ---------------------------
 # Cosmos-specific config
+# ---------------------------
 if [[ "$protocol" == "cosmos" ]]; then
 cat >> config.toml <<EOF
 
@@ -89,7 +112,9 @@ scaling_factor = 1e18
 EOF
   fi
 
+# ---------------------------
 # EVM-specific config
+# ---------------------------
 elif [[ "$protocol" == "evm" ]]; then
 cat >> config.toml <<EOF
 
