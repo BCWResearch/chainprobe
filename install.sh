@@ -4,13 +4,13 @@ set -e
 
 echo "🌐 Multi-Chain Exporter Setup Script (Global Python)"
 
-# Ensure required packages are available
+# Ensure required Python packages are installed
 echo "📦 Installing required Python packages globally..."
 sudo pip3 install --upgrade pip
-sudo pip3 install httpx prometheus_client toml psutil web3 schedule docker
+sudo pip3 install httpx prometheus_client toml psutil web3 schedule
 
 # ---------------------------
-# Gather config input
+# Gather Config Input
 # ---------------------------
 echo "🛠️  Exporter Configuration"
 read -p "Enter protocol (cosmos / evm / other): " protocol
@@ -18,16 +18,9 @@ read -p "Is this a validator node? (yes/no): " is_validator
 read -p "Enter Prometheus metrics port (default 3000): " metrics_port
 metrics_port=${metrics_port:-3000}
 
-# Ask user if binary version tracking is needed
-read -p "Track systemd services? (yes/no): " use_systemd
-if [[ "$use_systemd" == "yes" ]]; then
-  read -p "Enter comma-separated systemd binary names (e.g. gaiad,geth): " systemd_input
-fi
-
-read -p "Track Docker containers? (yes/no): " use_docker
-if [[ "$use_docker" == "yes" ]]; then
-  read -p "Enter comma-separated Docker container names (e.g. geth-node,polygon-validator): " docker_input
-fi
+# Ask for binaries (systemd) and docker containers
+read -p "Enter comma-separated systemd binary aliases (or leave blank): " binary_input
+read -p "Enter comma-separated Docker container names (or leave blank): " docker_input
 
 # ---------------------------
 # Generate config.toml
@@ -38,15 +31,25 @@ protocol = "$protocol"
 metrics_port = $metrics_port
 EOF
 
-# Systemd binaries
-if [[ "$use_systemd" == "yes" && -n "$systemd_input" ]]; then
+# ---------------------------
+# Add binaries (systemd services)
+# ---------------------------
+if [[ -n "$binary_input" ]]; then
   echo -e "\n[binaries]" >> config.toml
-  IFS=',' read -ra BIN_ARRAY <<< "$systemd_input"
+  IFS=',' read -ra BIN_ARRAY <<< "$binary_input"
   for alias in "${BIN_ARRAY[@]}"; do
     alias_trimmed=$(echo "$alias" | xargs)
     unit_path=$(systemctl show "${alias_trimmed}.service" -p FragmentPath --value 2>/dev/null)
+
+    # Quote TOML keys if they contain special characters
+    if [[ "$alias_trimmed" =~ [^a-zA-Z0-9_] ]]; then
+      safe_alias="\"$alias_trimmed\""
+    else
+      safe_alias=$alias_trimmed
+    fi
+
     if [[ -n "$unit_path" && -f "$unit_path" ]]; then
-      echo "$alias_trimmed = \"$unit_path\"" >> config.toml
+      echo "$safe_alias = \"$unit_path\"" >> config.toml
       echo "[✓] Found unit for $alias_trimmed → $unit_path"
     else
       echo "[!] Could not find unit file for $alias_trimmed. Skipping..."
@@ -54,18 +57,29 @@ if [[ "$use_systemd" == "yes" && -n "$systemd_input" ]]; then
   done
 fi
 
-# Docker containers
-if [[ "$use_docker" == "yes" && -n "$docker_input" ]]; then
+# ---------------------------
+# Add docker_containers
+# ---------------------------
+if [[ -n "$docker_input" ]]; then
   echo -e "\n[docker_containers]" >> config.toml
   IFS=',' read -ra DOCKER_ARRAY <<< "$docker_input"
-  for cname in "${DOCKER_ARRAY[@]}"; do
-    cname_trimmed=$(echo "$cname" | xargs)
-    echo "$cname_trimmed = true" >> config.toml
-    echo "[✓] Registered Docker container: $cname_trimmed"
+  for alias in "${DOCKER_ARRAY[@]}"; do
+    alias_trimmed=$(echo "$alias" | xargs)
+
+    # Quote TOML keys if they contain special characters
+    if [[ "$alias_trimmed" =~ [^a-zA-Z0-9_] ]]; then
+      safe_alias="\"$alias_trimmed\""
+    else
+      safe_alias=$alias_trimmed
+    fi
+
+    echo "$safe_alias = true" >> config.toml
   done
 fi
 
-# Cosmos-specific config
+# ---------------------------
+# Cosmos-specific metrics
+# ---------------------------
 if [[ "$protocol" == "cosmos" ]]; then
 cat >> config.toml <<EOF
 
@@ -111,6 +125,9 @@ scaling_factor = 1e18
 EOF
   fi
 
+# ---------------------------
+# EVM-specific metrics
+# ---------------------------
 elif [[ "$protocol" == "evm" ]]; then
 cat >> config.toml <<EOF
 
@@ -169,9 +186,6 @@ systemctl daemon-reload
 systemctl enable chainprobe
 systemctl restart chainprobe
 
-# ---------------------------
-# Done!
-# ---------------------------
 echo -e "\n🚀 chainprobe is installed and running!"
 echo "Check status:  sudo systemctl status chainprobe"
 echo "Logs:          journalctl -u chainprobe -f"
