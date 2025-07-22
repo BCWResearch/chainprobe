@@ -30,59 +30,28 @@ metrics_port = $metrics_port
 EOF
 
 # ---------------------------
-# Add binaries (systemd services)
-# ---------------------------
-if [[ -n "$binary_input" ]]; then
-  echo -e "\n[binaries]" >> config.toml
-  IFS=',' read -ra BIN_ARRAY <<< "$binary_input"
-  for alias in "${BIN_ARRAY[@]}"; do
-    alias_trimmed=$(echo "$alias" | xargs)
-    unit_path=$(systemctl show "${alias_trimmed}.service" -p FragmentPath --value 2>/dev/null)
-
-    # Always quote TOML keys
-    safe_alias="\"$alias_trimmed\""
-
-    if [[ -n "$unit_path" && -f "$unit_path" ]]; then
-      echo "$safe_alias = \"$unit_path\"" >> config.toml
-      echo "[✓] Found unit for $alias_trimmed → $unit_path"
-    else
-      echo "[!] Could not find unit file for $alias_trimmed. Skipping..."
-    fi
-  done
-fi
-
-# ---------------------------
-# Add Docker containers
-# ---------------------------
-if [[ -n "$docker_input" ]]; then
-  echo -e "\n[docker_containers]" >> config.toml
-  IFS=',' read -ra DOCKER_ARRAY <<< "$docker_input"
-  for alias in "${DOCKER_ARRAY[@]}"; do
-    alias_trimmed=$(echo "$alias" | xargs)
-    safe_alias="\"$alias_trimmed\""
-    echo "$safe_alias = true" >> config.toml
-  done
-fi
-
-# ---------------------------
 # Cosmos-specific config
 # ---------------------------
 if [[ "$protocol" == "cosmos" ]]; then
+  echo "🔗 Cosmos configuration"
+  echo -e "\nhost = \"http://localhost\"\nrest_port = 1317" >> config.toml
+
+  if [[ "$is_validator" == "yes" ]]; then
+    read -p "Enter valcons_address: " valcons_address
+    read -p "Enter valoper_address: " valoper_address
+    read -p "Enter account_address: " account_address
+    read -p "Enter scaling factor (default 1e18): " scaling_factor
+    scaling_factor=${scaling_factor:-1e18}
+
 cat >> config.toml <<EOF
 
-host = "http://localhost"
-rest_port = 1317
-valcons_address = ""
-valoper_address = ""
-account_address = ""
+valcons_address = "$valcons_address"
+valoper_address = "$valoper_address"
+account_address = "$account_address"
 
 [metrics.latest_block]
 path = "/cosmos/base/tendermint/v1beta1/blocks/latest"
 description = "Latest block height"
-EOF
-
-  if [[ "$is_validator" == "yes" ]]; then
-cat >> config.toml <<EOF
 
 [metrics.validator_missed_blocks_total]
 path = "/cosmos/slashing/v1beta1/signing_infos/\${valcons_address}"
@@ -103,12 +72,20 @@ description = "Validator commission rate"
 [metrics.validator_commission_amount]
 path = "/cosmos/distribution/v1beta1/validators/\${valoper_address}/commission"
 description = "Total commission amount"
-scaling_factor = 1e18
+scaling_factor = $scaling_factor
 
 [metrics.validator_rewards_total]
-path = "/cosmos/distribution/v1beta1/delegators/\${account_address}/rewards"
+path = "/cosmos/distribution/v1beta1/delegators/\${account_address}/rewards/\${valoper_address}"
 description = "Validator total rewards"
-scaling_factor = 1e18
+scaling_factor = $scaling_factor
+EOF
+
+  else
+cat >> config.toml <<EOF
+
+[metrics.latest_block]
+path = "/cosmos/base/tendermint/v1beta1/blocks/latest"
+description = "Latest block height"
 EOF
   fi
 
@@ -141,6 +118,39 @@ description = "Whether client is accepting connections"
 EOF
 fi
 
+# ---------------------------
+# Add binaries (systemd services)
+# ---------------------------
+if [[ -n "$binary_input" ]]; then
+  echo -e "\n[binaries]" >> config.toml
+  IFS=',' read -ra BIN_ARRAY <<< "$binary_input"
+  for alias in "${BIN_ARRAY[@]}"; do
+    alias_trimmed=$(echo "$alias" | xargs)
+    unit_path=$(systemctl show "${alias_trimmed}.service" -p FragmentPath --value 2>/dev/null)
+    safe_alias="\"$alias_trimmed\""
+
+    if [[ -n "$unit_path" && -f "$unit_path" ]]; then
+      echo "$safe_alias = \"$unit_path\"" >> config.toml
+      echo "[✓] Found unit for $alias_trimmed → $unit_path"
+    else
+      echo "[!] Could not find unit file for $alias_trimmed. Skipping..."
+    fi
+  done
+fi
+
+# ---------------------------
+# Add Docker containers
+# ---------------------------
+if [[ -n "$docker_input" ]]; then
+  echo -e "\n[docker_containers]" >> config.toml
+  IFS=',' read -ra DOCKER_ARRAY <<< "$docker_input"
+  for alias in "${DOCKER_ARRAY[@]}"; do
+    alias_trimmed=$(echo "$alias" | xargs)
+    safe_alias="\"$alias_trimmed\""
+    echo "$safe_alias = true" >> config.toml
+  done
+fi
+
 echo "✅ config.toml created."
 
 # ---------------------------
@@ -155,6 +165,7 @@ After=network.target
 
 [Service]
 Type=simple
+User=root
 WorkingDirectory=$(pwd)
 ExecStart=/usr/bin/python3 $(pwd)/main.py --config config.toml
 Restart=always
