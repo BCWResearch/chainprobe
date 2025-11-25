@@ -2,31 +2,12 @@
 
 set -e
 
-echo "🌐 Multi-Chain Exporter Setup Script (Virtualenv)"
+echo "🌐 Multi-Chain Exporter Setup Script (Global Python)"
 
-# Resolve app directory to an absolute path
-APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_DIR="$APP_DIR/venv"
-SERVICE_NAME="chainprobe.service"
-
-cd "$APP_DIR"
-
-# ---------------------------
-# Create / reuse virtualenv
-# ---------------------------
-if [ ! -d "$VENV_DIR" ]; then
-  echo "📦 Creating Python virtualenv at: $VENV_DIR"
-  python3 -m venv "$VENV_DIR"
-else
-  echo "📦 Reusing existing virtualenv at: $VENV_DIR"
-fi
-
-echo "📦 Installing required Python packages into venv..."
-# shellcheck disable=SC1090
-source "$VENV_DIR/bin/activate"
-pip install --upgrade pip
-pip install httpx prometheus_client toml psutil web3 schedule
-deactivate
+# Install required Python packages globally
+echo "📦 Installing required Python packages globally..."
+sudo pip3 install --upgrade pip
+sudo pip3 install httpx prometheus_client toml psutil web3 schedule
 
 # ---------------------------
 # Gather config input
@@ -40,10 +21,10 @@ read -p "Enter comma-separated systemd binary names (or leave blank): " binary_i
 read -p "Enter comma-separated Docker container names (or leave blank): " docker_input
 
 # ---------------------------
-# Generate config.toml (in repo directory)
+# Generate config.toml
 # ---------------------------
 echo "📝 Writing config.toml..."
-cat > "$APP_DIR/config.toml" <<EOF
+cat > config.toml <<EOF
 protocol = "$protocol"
 metrics_port = $metrics_port
 EOF
@@ -53,11 +34,7 @@ EOF
 # ---------------------------
 if [[ "$protocol" == "cosmos" ]]; then
   echo "🔗 Cosmos configuration"
-  cat >> "$APP_DIR/config.toml" <<EOF
-
-host = "http://localhost"
-rest_port = 1317
-EOF
+  echo -e "\nhost = \"http://localhost\"\nrest_port = 1317" >> config.toml
 
   if [[ "$is_validator" == "yes" ]]; then
     read -p "Enter valcons_address: " valcons_address
@@ -66,7 +43,7 @@ EOF
     read -p "Enter scaling factor (default 1e18): " scaling_factor
     scaling_factor=${scaling_factor:-1e18}
 
-cat >> "$APP_DIR/config.toml" <<EOF
+cat >> config.toml <<EOF
 
 valcons_address = "$valcons_address"
 valoper_address = "$valoper_address"
@@ -104,7 +81,7 @@ scaling_factor = $scaling_factor
 EOF
 
   else
-cat >> "$APP_DIR/config.toml" <<EOF
+cat >> config.toml <<EOF
 
 [metrics.latest_block]
 path = "/cosmos/base/tendermint/v1beta1/blocks/latest"
@@ -116,7 +93,7 @@ EOF
 # EVM-specific config
 # ---------------------------
 elif [[ "$protocol" == "evm" ]]; then
-cat >> "$APP_DIR/config.toml" <<EOF
+cat >> config.toml <<EOF
 
 [default]
 rpcaddress = "http://localhost:8545"
@@ -145,7 +122,7 @@ fi
 # Add binaries (systemd services)
 # ---------------------------
 if [[ -n "$binary_input" ]]; then
-  echo -e "\n[binaries]" >> "$APP_DIR/config.toml"
+  echo -e "\n[binaries]" >> config.toml
   IFS=',' read -ra BIN_ARRAY <<< "$binary_input"
   for alias in "${BIN_ARRAY[@]}"; do
     alias_trimmed=$(echo "$alias" | xargs)
@@ -153,7 +130,7 @@ if [[ -n "$binary_input" ]]; then
     safe_alias="\"$alias_trimmed\""
 
     if [[ -n "$unit_path" && -f "$unit_path" ]]; then
-      echo "$safe_alias = \"$unit_path\"" >> "$APP_DIR/config.toml"
+      echo "$safe_alias = \"$unit_path\"" >> config.toml
       echo "[✓] Found unit for $alias_trimmed → $unit_path"
     else
       echo "[!] Could not find unit file for $alias_trimmed. Skipping..."
@@ -165,23 +142,23 @@ fi
 # Add Docker containers
 # ---------------------------
 if [[ -n "$docker_input" ]]; then
-  echo -e "\n[docker_containers]" >> "$APP_DIR/config.toml"
+  echo -e "\n[docker_containers]" >> config.toml
   IFS=',' read -ra DOCKER_ARRAY <<< "$docker_input"
   for alias in "${DOCKER_ARRAY[@]}"; do
     alias_trimmed=$(echo "$alias" | xargs)
     safe_alias="\"$alias_trimmed\""
-    echo "$safe_alias = true" >> "$APP_DIR/config.toml"
+    echo "$safe_alias = true" >> config.toml
   done
 fi
 
-echo "✅ config.toml created at $APP_DIR/config.toml."
+echo "✅ config.toml created."
 
 # ---------------------------
 # Create systemd service
 # ---------------------------
 echo "🔧 Creating systemd service: chainprobe"
 
-sudo bash -c "cat > /etc/systemd/system/chainprobe.service" <<EOF
+cat > /etc/systemd/system/chainprobe.service <<EOF
 [Unit]
 Description=chainprobe Multi-Protocol Exporter
 After=network.target
@@ -189,8 +166,8 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=$APP_DIR
-ExecStart=$VENV_DIR/bin/python $APP_DIR/main.py --config $APP_DIR/config.toml
+WorkingDirectory=$(pwd)
+ExecStart=/usr/bin/python3 $(pwd)/main.py --config config.toml
 Restart=always
 RestartSec=5
 
@@ -202,10 +179,10 @@ EOF
 # Enable + start service
 # ---------------------------
 echo "🟢 Starting chainprobe service..."
-sudo systemctl daemon-reexec
-sudo systemctl daemon-reload
-sudo systemctl enable chainprobe
-sudo systemctl restart chainprobe
+systemctl daemon-reexec
+systemctl daemon-reload
+systemctl enable chainprobe
+systemctl restart chainprobe
 
 # ---------------------------
 # Done!
