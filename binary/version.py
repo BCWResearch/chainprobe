@@ -86,6 +86,7 @@ async def report_binary_version_daily(config):
     docker_containers = config.get("docker_containers", [])
 
     while True:
+        binary_version_metric.clear()
         # Handle systemd services
         for alias, unit_path in binaries.items():
             binary_path = extract_binary_path_from_unit(unit_path)
