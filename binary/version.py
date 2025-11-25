@@ -46,11 +46,11 @@ def get_binary_version(binary_path):
     if not binary_path:
         return None
 
-    version_regex = re.compile(r"\\bv?(\\d+\\.\\d+\\.\\d+(?:[-+.\\w]*)?)\\b")
+    version_regex = re.compile(r"\bv?(\d+\.\d+\.\d+(?:[-+.\w]*)?)\b")
 
     version_cmds = [
-        [binary_path, "version"],
-        [binary_path, "--version"]
+        [binary_path, "--version"],
+        [binary_path, "version"]
     ]
 
     for cmd in version_cmds:
