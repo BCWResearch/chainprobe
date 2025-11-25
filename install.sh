@@ -4,6 +4,10 @@ set -e
 
 echo "🌐 Multi-Chain Exporter Setup Script (Virtualenv)"
 
+echo "📦 Installing python3-venv..."
+sudo apt-get update -y
+sudo apt-get install -y python3-venv
+
 # Resolve app directory to an absolute path
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$APP_DIR/venv"
