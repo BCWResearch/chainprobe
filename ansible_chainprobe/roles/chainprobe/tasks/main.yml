@@ -1,0 +1,8 @@
+- name: Ensure repository is connected via HTTPS and pull latest main
+  ansible.builtin.git:
+    repo: "{{ chainprobe_repo_url }}"
+    dest: "{{ chainprobe_install_path }}"
+    version: main
+    update: yes
+    force: yes  # This discards local changes to ensure you get the exact version from GitHub
+  register: git_result

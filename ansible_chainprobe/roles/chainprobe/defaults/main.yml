@@ -1,0 +1,5 @@
+---
+# Default variables for chainprobe role
+chainprobe_repo_url: "https://github.com/BCWResearch/chainprobe.git"
+chainprobe_install_path: '/chainprobe'
+git_branch: 'main'

@@ -1,0 +1,9 @@
+---
+- name: Deploy SnarkOS Blockchain
+  hosts: all
+  become: true
+  tasks:
+
+    - name: Include chainprobe role
+      ansible.builtin.import_role:
+        name: chainprobe
